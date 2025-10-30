@@ -1,0 +1,176 @@
+%% Matboard Bridge Structural Simulation
+% Simulates a moving train load across a simply supported matboard bridge.
+% Calculates SFD, BMD, stresses, and failure modes (flexural, shear, buckling, etc.)
+
+clc; clear; close all;
+
+%% Bridge and Load Parameters
+L = 1200;          % Bridge length (mm)
+n = 1200;          % Number of subsections
+P = 452;           % Total train weight (N)
+x = linspace(0, L, n + 1);  % x-axis for SFD & BMD
+
+x_train = [52 228 392 568 732 908];  % Train wheel locations (mm)
+baseload = P / 3.35;
+P_train = [baseload/2 baseload/2 baseload/2 baseload/2 baseload*1.35/2 baseload*1.35/2] * -1;
+
+n_train = 1200;    % Number of train locations
+
+%% Initialize Matrices
+Wi   = zeros(n_train, n + 1);  % Applied loads
+SFDi = zeros(n_train, n + 1);  % Shear Force Diagrams
+BMDi = zeros(n_train, n + 1);  % Bending Moment Diagrams
+
+%% Moving Load Simulation
+for i = 1:n_train
+    traincmloc = L / (n_train + 1) * i;          % Center of train location
+    flocs = x_train - (480 - traincmloc);        % Force locations
+    temp_P_train = P_train;                      % Copy load array
+
+    % Remove forces off the bridge
+    temp_P_train(flocs < 0 | flocs > L) = 0;
+
+    % Reaction forces
+    By = sum(temp_P_train .* flocs) / -L;
+    Ay = -sum(temp_P_train) - By;
+
+    % Apply reactions
+    Wi(i, 1)   = Ay;
+    Wi(i, end) = By;
+
+    % Apply wheel loads
+    for j = 1:length(flocs)
+        if flocs(j) >= 0 && flocs(j) <= L
+            [~, idx] = min(abs(x - flocs(j)));
+            Wi(i, idx) = temp_P_train(j);
+        end
+    end
+
+    % Compute SFD and BMD
+    SFDi(i, :) = cumsum(Wi(i, :));
+    BMDi(i, :) = cumsum(SFDi(i, :));
+end
+
+%% Envelopes
+SFD = max(abs(SFDi));  % Shear force envelope
+BMD = max(BMDi);       % Bending moment envelope
+
+%% Cross-Section Parameters
+% param = [xc, Btf, Ttf, Bgt, Tgt, Bst, Tst, Bb, Tb]
+param = [0, 100, 1.27*3, 5, 1.27, 1.27, 94.92, 80, 1.27];
+number_of_webs = 6;
+
+areas = [param(2)*param(3), param(4)*param(5), param(4)*param(5), ...
+         param(6)*param(7), param(6)*param(7), param(8)*param(9)];
+
+y_centroids = [param(7)+param(9)+param(3)/2, param(7)+param(9)-param(5)/2, ...
+               param(7)+param(9)-param(5)/2, param(9)+param(7)/2, ...
+               param(9)+param(7)/2, param(9)/2];
+
+ybar = sum(areas .* y_centroids) / sum(areas);
+
+% Moment of inertia via parallel axis theorem
+I = (param(2)*param(3)^3)/12 + 2*(param(4)*param(5)^3)/12 + ...
+    2*(param(6)*param(7)^3)/12 + (param(8)*param(9)^3)/12 + ...
+    sum(areas .* (ybar - y_centroids).^2);
+
+%% Shear and Moment Forces
+M = max(BMD);
+V = max(SFD);
+
+%% Stress Calculations
+Qcent = areas(6)*(ybar - y_centroids(6)) + ...
+        2*param(6)*(ybar - param(9))*(ybar - param(9))/2;
+
+Qglue = areas(1)*(y_centroids(1) - ybar);
+
+Flexural_Stress_Top = M*(param(9)+param(7)+param(3)-ybar)/I;
+Flexural_Stress_Bot = M*ybar/I;
+Shear_Stress_Max    = V*Qcent/(I*2*param(6));
+Shear_Stress_Glue   = V*Qglue/(I*2*(param(4)+param(6)));
+
+%% Material Properties
+E = 4000; mu = 0.2;
+S_tens = 30; S_comp = 6; T_max = 4; T_glue = 2;
+
+%% Buckling Calculations
+S_buck1 = 4*(pi^2)*E/(12*(1 - mu^2))*(param(3)/param(8))^2;
+S_buck2 = 0.4254*(pi^2)*E/(12*(1 - mu^2))*(1.27/((param(2)-param(8))/2))^2;
+S_buck3 = 6*(pi^2)*E/(12*(1 - mu^2))*(param(6)/(param(7)+param(9)-ybar))^2;
+T_buck  = 5*(pi^2)*E/(12*(1 - mu^2))*((param(6)/param(7))^2 + (param(6)/(L/(number_of_webs-1)))^2);
+
+%% Factor of Safety (FOS)
+FOS_tension  = S_tens / Flexural_Stress_Bot;
+FOS_comp     = S_comp / Flexural_Stress_Top;
+FOS_buck1    = S_buck1 / Flexural_Stress_Top;
+FOS_buck2    = S_buck2 / Flexural_Stress_Top;
+FOS_buck3    = S_buck3 / Flexural_Stress_Top;
+FOS_shear    = T_max / Shear_Stress_Max;
+FOS_glue     = T_glue / Shear_Stress_Glue;
+FOS_shear_bk = T_buck / Shear_Stress_Max;
+
+FOS = [FOS_tension FOS_comp FOS_shear FOS_glue FOS_buck1 FOS_buck2 FOS_buck3 FOS_shear_bk];
+FOS_labels = ["Tension" "Compression" "Shear" "Glue" "Buck1" "Buck2" "Buck3" "Shear Buck."];
+
+[minFOS, idx] = min(FOS);
+fprintf("Minimum FOS: %.2f (%s)\n", minFOS, FOS_labels(idx));
+
+%% Failure Loads for Plotting
+Mf_tens = FOS_tension * M;  Mf_comp = FOS_comp * M;
+Mf_b1 = FOS_buck1 * M;      Mf_b2 = FOS_buck2 * M; Mf_b3 = FOS_buck3 * M;
+Vf_sh = FOS_shear * V;      Vf_gl = FOS_glue * V;  Vf_bk = FOS_shear_bk * V;
+
+%% Visualization
+figure('Name', 'Bridge Failure Analysis', 'Position', [100 100 1200 700]);
+
+subplot(2,3,1);
+hold on; grid on; grid minor;
+yline(Vf_sh, 'r');
+plot(x, SFD, 'k');
+plot([0, L], [0,0], 'k', 'LineWidth', 2);
+legend("Shear Failure (Matboard)");
+xlabel("Distance (mm)"); ylabel("Shear Force (N)");
+
+subplot(2,3,2);
+hold on; grid on; grid minor;
+yline(Vf_gl, 'r');
+plot(x, SFD, 'k');
+plot([0,L],[0,0],'k','LineWidth',2);
+legend("Glue Shear Failure");
+xlabel("Distance (mm)"); ylabel("Shear Force (N)");
+
+subplot(2,3,3);
+hold on; grid on; grid minor;
+yline(Vf_bk, 'r');
+plot(x, SFD, 'k');
+plot([0, L], [0,0], 'k', 'LineWidth', 2);
+legend("Shear Buckling Failure");
+xlabel("Distance (mm)"); ylabel("Shear Force (N)");
+
+subplot(2,3,4);
+hold on; grid on; grid minor;
+set(gca, 'YDir','reverse');
+axis([0 L (-0.5e5) (5e5)]);
+yline(Mf_tens, 'r'); yline(Mf_comp, 'b');
+plot(x, BMD, 'k'); plot([0, L], [0,0], 'k', 'LineWidth', 2);
+legend("Tension Failure", "Compression Failure");
+xlabel("Distance (mm)"); ylabel("Bending Moment (N·mm)");
+
+subplot(2,3,5);
+hold on; grid on; grid minor;
+set(gca, 'YDir','reverse');
+axis([0 L (-1e5) (12e5)]);
+yline(Mf_b1, 'r'); yline(Mf_b2, 'b');
+plot(x, BMD, 'k'); plot([0, L], [0,0], 'k', 'LineWidth', 2);
+legend("Buckling - Top Flange (Mid)", "Buckling - Top Flange (Sides)");
+xlabel("Distance (mm)"); ylabel("Bending Moment (N·mm)");
+
+subplot(2,3,6);
+hold on; grid on; grid minor;
+set(gca, 'YDir','reverse');
+axis([0 L (-1.5e5) (16e5)]);
+yline(Mf_b3, 'r');
+plot(x, BMD, 'k');
+plot([0, L], [0,0], 'k', 'LineWidth', 2);
+legend("Buckling - Webs");
+xlabel("Distance (mm)"); ylabel("Bending Moment (N·mm)");
