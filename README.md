@@ -6,7 +6,7 @@ This project simulates a **matboard bridge** under a **moving train load** using
 
 ## 🔧 Features
 
-- Simulates a **six-wheel train** traversing a 1200 mm simply supported bridge  
+- Simulates a **six-axle train** traversing a 1200 mm simply supported bridge  
 - Generates **Shear Force Diagrams (SFD)** and **Bending Moment Diagrams (BMD)** for each train position  
 - Calculates:
   - Reaction forces at supports  
