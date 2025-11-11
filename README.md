@@ -4,7 +4,7 @@ This project simulates a **matboard bridge** under a **moving train load** using
 
 ---
 
-## 🔧 Features
+## Features
 
 - Simulates a **six-axle train** traversing a 1200 mm simply supported bridge  
 - Generates **Shear Force Diagrams (SFD)** and **Bending Moment Diagrams (BMD)** for each train position  
@@ -20,7 +20,7 @@ This project simulates a **matboard bridge** under a **moving train load** using
 
 ---
 
-## 🧮 Engineering Methods
+## Engineering Methods
 
 The analysis combines **classical beam theory** with **failure mechanics**:
 
@@ -36,11 +36,11 @@ The analysis combines **classical beam theory** with **failure mechanics**:
 4. **Stress Evaluation:**  
    - Flexural stress:  
      \[
-     \sigma = \frac{M y}{I}
+     \sigma = \frac{M_y}{I}
      \]
    - Shear stress:  
      \[
-     \tau = \frac{VQ}{I b}
+     \tau = \frac{VQ}{I_b}
      \]
 
 5. **Buckling Analysis:**  
@@ -51,7 +51,7 @@ The analysis combines **classical beam theory** with **failure mechanics**:
 
 ---
 
-## 📊 Output
+## Output
 
 The program outputs:
 
